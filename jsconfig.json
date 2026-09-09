@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "#modules/*": ["./lib/jiosaavn-api/src/modules/*"],
+      "#common/*": ["./lib/jiosaavn-api/src/common/*"]
     }
   }
 }

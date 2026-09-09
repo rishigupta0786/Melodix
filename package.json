@@ -2,16 +2,27 @@
   "name": "vibe-coding-music-player",
   "version": "0.1.0",
   "private": true,
+  "imports": {
+    "#modules/*": "./lib/jiosaavn-api/src/modules/*",
+    "#common/*": "./lib/jiosaavn-api/src/common/*"
+  },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "lint": "eslint"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@hono/zod-openapi": "^1.6.3",
+    "@hono/zod-validator": "^0.9.1",
+    "@scalar/hono-api-reference": "^0.12.0",
+    "hono": "^4.13.7",
     "next": "16.3.3",
+    "node-forge": "^1.4.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
