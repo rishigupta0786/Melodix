@@ -60,8 +60,8 @@ export function useAudioPlayer({ track, onEnded, onError } = {}) {
 
     setCurrentTime(0);
     setDuration(0);
+    audio.autoplay = intentRef.current;
     audio.src = track.streamUrl;
-    audio.load();
 
     if (intentRef.current) {
       audio.play().catch(() => setIsPlaying(false));
@@ -77,11 +77,13 @@ export function useAudioPlayer({ track, onEnded, onError } = {}) {
 
   const play = useCallback(() => {
     intentRef.current = true;
+    if (audioRef.current) audioRef.current.autoplay = true;
     audioRef.current?.play().catch(() => setIsPlaying(false));
   }, []);
 
   const pause = useCallback(() => {
     intentRef.current = false;
+    if (audioRef.current) audioRef.current.autoplay = false;
     audioRef.current?.pause();
   }, []);
 
