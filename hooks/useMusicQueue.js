@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useState } from "react";
-import { GENRES, fetchTracksForGenre } from "@/services/musicService";
+import { GENRES, fetchTracksForGenre } from "@/services/musicService.mobile";
 
 const initialQueueState = {
   tracks: [],

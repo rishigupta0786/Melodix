@@ -32,7 +32,7 @@ export default function MusicPlayer({
   const controlsDisabled = isLoading || Boolean(error) || isEmpty;
 
   return (
-    <div className="glass-panel flex w-full max-w-2xl flex-col gap-6 rounded-3xl px-5 py-6 sm:px-8 sm:py-7">
+    <div className="glass-panel flex w-full max-w-2xl flex-col gap-8 rounded-3xl p-8 sm:p-10 my-4 sm:my-6">
       {isLoading ? (
         <StatusMessage>Loading your vibe...</StatusMessage>
       ) : error ? (
@@ -50,17 +50,20 @@ export default function MusicPlayer({
         disabled={controlsDisabled}
       />
 
-      <PlayerControls
-        isPlaying={isPlaying}
-        onTogglePlay={onTogglePlay}
-        onPrevious={onPrevious}
-        onNext={onNext}
-        disabled={controlsDisabled}
-        volume={volume}
-        isMuted={isMuted}
-        onVolumeChange={onVolumeChange}
-        onToggleMute={onToggleMute}
-      />
+      {/* PlayerControls hidden on mobile (shown in fixed bottom bar instead) */}
+      <div className="hidden lg:block">
+        <PlayerControls
+          isPlaying={isPlaying}
+          onTogglePlay={onTogglePlay}
+          onPrevious={onPrevious}
+          onNext={onNext}
+          disabled={controlsDisabled}
+          volume={volume}
+          isMuted={isMuted}
+          onVolumeChange={onVolumeChange}
+          onToggleMute={onToggleMute}
+        />
+      </div>
     </div>
   );
 }

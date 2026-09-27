@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchWallpaper, preloadImage } from "@/services/wallpaperService";
 
-// ~18 minutes, inside the spec's 15-20 minute window.
-const DEFAULT_INTERVAL_MS = 18 * 60 * 1000;
+// 2 minutes
+const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
 export function useWallpaperRotation({ intervalMs = DEFAULT_INTERVAL_MS } = {}) {
   const [wallpaper, setWallpaper] = useState(null);

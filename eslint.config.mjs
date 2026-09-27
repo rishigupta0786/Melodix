@@ -10,6 +10,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Third-party library (JioSaavn API) - not our code to fix
+    "lib/jiosaavn-api/**",
   ]),
 ]);
 

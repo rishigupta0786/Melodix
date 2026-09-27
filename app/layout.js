@@ -19,11 +19,15 @@ export const viewport = {
   themeColor: "#0a0a0d",
 };
 
+import LockScreen from "@/components/LockScreen";
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
       <body className="h-full min-h-screen bg-bg text-text-primary">
-        {children}
+        <LockScreen>
+          {children}
+        </LockScreen>
       </body>
     </html>
   );
