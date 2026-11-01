@@ -2,6 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Setting src="" makes browsers fire an "error" event (empty src); removing the
+// attribute and calling load() resets the element without that side effect.
+function clearAudioSource(audio) {
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+}
+
 /**
  * Unified player hook that manages both HTML5 audio (for Saavn/Local) 
  * and YouTube IFrame player (for YouTube) playback.
@@ -32,6 +40,9 @@ export function useUnifiedPlayer({ onEnded, onError } = {}) {
   const onEndedRef = useRef(onEnded);
   const onErrorRef = useRef(onError);
 
+  const volumeRef = useRef(0.8);
+  const isMutedRef = useRef(false);
+
   useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
@@ -45,7 +56,12 @@ export function useUnifiedPlayer({ onEnded, onError } = {}) {
     const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
     const handleLoadedMetadata = () => setDuration(audio.duration || 0);
     const handleEnded = () => onEndedRef.current?.();
-    const handleError = () => onErrorRef.current?.(audio.error);
+    // Clearing the source (see clearAudioSource) can raise a spurious error;
+    // only real playback failures on an actual source should reach onError.
+    const handleError = () => {
+      if (!audio.getAttribute("src")) return;
+      onErrorRef.current?.(audio.error);
+    };
 
     audio.addEventListener("play", handlePlay);
     audio.addEventListener("pause", handlePause);
@@ -71,6 +87,27 @@ export function useUnifiedPlayer({ onEnded, onError } = {}) {
     audio.volume = isMuted ? 0 : volume;
     audio.muted = isMuted;
   }, [volume, isMuted]);
+
+  // Same volume/mute for the (hidden) YouTube player
+  useEffect(() => {
+    volumeRef.current = volume;
+    isMutedRef.current = isMuted;
+    const player = youtubePlayerRef.current;
+    if (player?.setVolume) player.setVolume(Math.round((isMuted ? 0 : volume) * 100));
+  }, [volume, isMuted]);
+
+  // The YouTube player has no timeupdate event, so poll its position while a YouTube track is loaded
+  useEffect(() => {
+    if (provider !== "youtube") return undefined;
+    const timer = setInterval(() => {
+      const player = youtubePlayerRef.current;
+      if (!player?.getCurrentTime) return;
+      setCurrentTime(player.getCurrentTime() || 0);
+      const total = player.getDuration?.() || 0;
+      if (total) setDuration(total);
+    }, 500);
+    return () => clearInterval(timer);
+  }, [provider]);
 
   // Load YouTube IFrame API
   const apiLoadedRef = useRef(false);
@@ -113,25 +150,30 @@ export function useUnifiedPlayer({ onEnded, onError } = {}) {
   const initYouTubePlayer = useCallback(async (videoId) => {
     if (!videoId) return;
     
-    // Get the container element - try ref first, then fallback to ID
-    const container = youtubeContainerRef.current || document.getElementById("youtube-player-container");
-    if (!container) {
+    // Stable (hidden) wrapper; the YT API replaces its target element and destroy() removes it,
+    // so every player gets a fresh child element.
+    const wrapper = youtubeContainerRef.current || document.getElementById("youtube-player-container");
+    if (!wrapper) {
       console.warn("YouTube player container not ready, retrying...");
-      // Retry after a short delay
       setTimeout(() => initYouTubePlayerRef.current?.(videoId), 100);
       return;
     }
 
     try {
       await initYouTubeAPI();
-      
+
       if (youtubePlayerRef.current) {
         youtubePlayerRef.current.destroy();
+        youtubePlayerRef.current = null;
       }
 
+      wrapper.replaceChildren();
+      const container = document.createElement("div");
+      wrapper.appendChild(container);
+
       youtubePlayerRef.current = new window.YT.Player(container, {
-        height: "100%",
-        width: "100%",
+        height: "200",
+        width: "200",
         videoId,
         playerVars: {
           autoplay: 0,
@@ -147,6 +189,8 @@ export function useUnifiedPlayer({ onEnded, onError } = {}) {
         },
         events: {
           onReady: (event) => {
+            event.target.setVolume(Math.round((isMutedRef.current ? 0 : volumeRef.current) * 100));
+            setDuration(event.target.getDuration() || 0);
             // Auto-play if user explicitly requested it (clicked play on result)
             if (intentRef.current) {
               event.target.playVideo();
@@ -188,7 +232,7 @@ export function useUnifiedPlayer({ onEnded, onError } = {}) {
       // Stop any currently playing audio
       if (audioRef.current) {
         audioRef.current.pause();
-        audioRef.current.src = "";
+        clearAudioSource(audioRef.current);
       }
       if (youtubePlayerRef.current) {
         try {
@@ -211,7 +255,7 @@ export function useUnifiedPlayer({ onEnded, onError } = {}) {
     // This prevents simultaneous playback when switching sources
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current.src = "";
+      clearAudioSource(audioRef.current);
     }
     if (youtubePlayerRef.current) {
       try {

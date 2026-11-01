@@ -1,5 +1,7 @@
 "use client";
 
+import DownloadSettings from "./DownloadSettings";
+
 export default function Sidebar({
   sections,
   activeSection,
@@ -9,7 +11,9 @@ export default function Sidebar({
   className = "flex",
 }) {
   return (
-    <aside className={`glass-panel w-72 shrink-0 flex-col gap-8 px-6 py-8 ${className}`}>
+    <aside
+      className={`glass-panel w-72 shrink-0 flex-col gap-8 px-6 py-8 ${className}`}
+    >
       <div>
         <p className="text-lg font-semibold tracking-tight text-text-primary">
           Vibe Coding
@@ -20,47 +24,80 @@ export default function Sidebar({
       <nav aria-label="Music sources" className="flex flex-col gap-6">
         {sections.map((section) => (
           <div key={section.id}>
-            <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-text-secondary">
-              {section.label}
-            </p>
-            <ul className="flex flex-col gap-1">
-              {section.items.map((item) => {
-                const isActiveSection = activeSection === section.id;
-                const isActiveGenre = activeGenre === item.id;
-                const isActive = isActiveSection && (section.id === "online" ? isActiveGenre : true);
-                
-                return (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelectSection(section.id);
-                        if (item.id !== section.id) {
-                          onSelectGenre(item.id, section.id);
-                        }
-                      }}
-                      aria-current={isActive ? "true" : undefined}
-                      className={`focus-ring flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                        isActive
-                          ? "bg-white/10 text-text-primary"
-                          : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
-                      }`}
-                    >
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${
-                          isActive ? "bg-accent" : "bg-transparent"
-                        }`}
-                        aria-hidden="true"
-                      />
-                      {item.label}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            {section.items.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => onSelectSection(section.id)}
+                aria-current={activeSection === section.id ? "true" : undefined}
+                className={`focus-ring flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider transition-colors ${
+                  activeSection === section.id
+                    ? "bg-white/10 text-text-primary"
+                    : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${
+                    activeSection === section.id
+                      ? "bg-accent"
+                      : "bg-transparent"
+                  }`}
+                  aria-hidden="true"
+                />
+                {section.label}
+              </button>
+            ) : (
+              <>
+                <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-text-secondary">
+                  {section.label}
+                </p>
+                <ul className="flex flex-col gap-1">
+                  {section.items.map((item) => {
+                    const isActiveSection = activeSection === section.id;
+                    const isActiveGenre = activeGenre === item.id;
+                    const isActive =
+                      isActiveSection &&
+                      (section.id === "local" ? true : isActiveGenre);
+
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onSelectSection(section.id);
+                            if (item.id !== section.id) {
+                              onSelectGenre(item.id, section.id);
+                            }
+                          }}
+                          aria-current={isActive ? "true" : undefined}
+                          className={`focus-ring flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                            isActive
+                              ? "bg-white/10 text-text-primary"
+                              : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${
+                              isActive ? "bg-accent" : "bg-transparent"
+                            }`}
+                            aria-hidden="true"
+                          />
+                          {item.label}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
           </div>
         ))}
       </nav>
+      <div className="mt-auto border-t border-white/10 pt-4">
+        <DownloadSettings
+          className="w-full px-3 py-2.5 text-sm"
+          label="Download location"
+        />
+      </div>
     </aside>
   );
 }

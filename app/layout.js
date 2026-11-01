@@ -20,11 +20,13 @@ export const viewport = {
 };
 
 import LockScreen from "@/components/LockScreen";
+import DownloadProgressBar from "@/components/DownloadProgressBar";
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
       <body className="h-full min-h-screen bg-bg text-text-primary">
+        <DownloadProgressBar />
         <LockScreen>
           {children}
         </LockScreen>

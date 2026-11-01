@@ -108,12 +108,15 @@ export default function PlayerControls({
   isMuted,
   onVolumeChange,
   onToggleMute,
+  leading,
+  trailing,
 }) {
   const isSilent = isMuted || volume === 0;
 
   return (
-    <div className="flex w-full items-center justify-center gap-2 sm:justify-between">
-      <div className="hidden items-center gap-2 sm:flex">
+    <div className="flex w-full items-center justify-center gap-2">
+      <div className="flex flex-1 items-center gap-2 max-sm:justify-end">
+        <div className="hidden items-center gap-2 sm:flex">
         <IconButton
           label={isSilent ? "Unmute" : "Mute"}
           onClick={onToggleMute}
@@ -131,6 +134,8 @@ export default function PlayerControls({
           aria-label="Volume"
           className="focus-ring h-1.5 w-20 cursor-pointer appearance-none rounded-full bg-white/10 accent-[var(--color-accent)]"
         />
+        </div>
+        {leading}
       </div>
 
       <div className="glass-panel flex items-center gap-2 rounded-full px-3 py-2">
@@ -150,7 +155,7 @@ export default function PlayerControls({
         </IconButton>
       </div>
 
-      <div className="hidden w-24 sm:block" aria-hidden="true" />
+      <div className="flex flex-1 items-center justify-end max-sm:justify-start">{trailing}</div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useFavorites } from "@/hooks/useFavorites";
+import { useSongDownload } from "@/hooks/useSongDownload";
 
 function formatDuration(seconds) {
   if (!seconds || seconds < 0) return "";
@@ -16,10 +17,17 @@ export default function YouTubeResultCard({
 }) {
   const { isFavorite, toggle } = useFavorites();
   const favorite = isFavorite(track.id);
+  const canDownload = Boolean(track.youtubeVideoId || track.streamUrl);
+  const { download, isDownloading, percent, error: downloadError } = useSongDownload(track);
 
   const handleFavoriteClick = (event) => {
     event.stopPropagation();
     toggle(track);
+  };
+
+  const handleDownloadClick = (event) => {
+    event.stopPropagation();
+    download();
   };
 
   const handlePlayClick = (event) => {
@@ -33,9 +41,9 @@ export default function YouTubeResultCard({
       role="listitem"
     >
       <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-white/5">
-        {track.thumbnail ? (
+        {track.thumbnail || track.artwork ? (
           <img
-            src={track.thumbnail}
+            src={track.thumbnail || track.artwork}
             alt=""
             className="h-full w-full object-cover"
             loading="lazy"
@@ -54,10 +62,15 @@ export default function YouTubeResultCard({
         )}
       </div>
 
-      <div className="flex-1 min-w-0">
+      <button
+        type="button"
+        onClick={handlePlayClick}
+        aria-label={`Play ${track.title}`}
+        className="focus-ring min-w-0 flex-1 cursor-pointer text-left"
+      >
         <h3 className="truncate text-sm font-medium text-text-primary">{track.title}</h3>
         <p className="truncate text-xs text-text-secondary mt-0.5">{track.artist}</p>
-      </div>
+      </button>
 
       <div className="flex items-center gap-1">
         <button
@@ -70,6 +83,47 @@ export default function YouTubeResultCard({
             <polygon points="7,4 20,12 7,20" fill="currentColor" />
           </svg>
         </button>
+        {canDownload && (
+          <button
+            type="button"
+            onClick={handleDownloadClick}
+            disabled={isDownloading}
+            aria-label={`Download ${track.title}`}
+            title={downloadError || (isDownloading ? `Downloading... ${Math.round(percent)}%` : "Download MP3")}
+            className={`focus-ring flex shrink-0 items-center justify-center h-9 w-9 rounded-full transition-colors disabled:cursor-wait ${
+              downloadError ? "text-red-400" : "text-text-secondary hover:text-accent hover:bg-white/10"
+            }`}
+          >
+            {isDownloading ? (
+              <svg viewBox="0 0 36 36" className="h-7 w-7 -rotate-90" aria-hidden="true">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="currentColor" strokeWidth="3" opacity="0.2" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="var(--color-accent)"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeDasharray={2 * Math.PI * 14}
+                  strokeDashoffset={2 * Math.PI * 14 * (1 - Math.max(percent, 4) / 100)}
+                  className="transition-[stroke-dashoffset] duration-300"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+                <path
+                  d="M12 4v11m0 0l-4-4m4 4l4-4M5 20h14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </button>
+        )}
         <button
           type="button"
           onClick={handleFavoriteClick}

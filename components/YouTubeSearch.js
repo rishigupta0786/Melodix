@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export default function YouTubeSearch({ onSearch, placeholder = "Search YouTube...", className = "" }) {
+export default function YouTubeSearch({ onSearch, placeholder = "Search YouTube...", ariaLabel = "Search YouTube", className = "" }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef(null);
   const debounceRef = useRef(null);
 
   const handleSearch = useCallback((value) => {
     const trimmed = value.trim();
-    setQuery(trimmed);
+    setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       onSearch(trimmed);
@@ -39,7 +39,7 @@ export default function YouTubeSearch({ onSearch, placeholder = "Search YouTube.
         onChange={(e) => handleSearch(e.target.value)}
         placeholder={placeholder}
         className="flex-1 bg-transparent border-none outline-none text-text-primary placeholder:text-text-secondary text-base"
-        aria-label="Search YouTube"
+        aria-label={ariaLabel}
         autoComplete="off"
       />
       {query && (

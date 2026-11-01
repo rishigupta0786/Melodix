@@ -1,36 +1,29 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { getFavorites, addFavorite, removeFavorite, isFavorite, toggleFavorite } from "@/services/favoritesService";
+import { useCallback, useSyncExternalStore } from "react";
+import {
+  getFavorites,
+  getFavoritesServerSnapshot,
+  subscribeFavorites,
+  addFavorite,
+  removeFavorite,
+  isFavorite,
+  toggleFavorite,
+} from "@/services/favoritesService";
 
+// Backed by a shared store, so every component using this hook (the page's
+// Favorites list and each card's heart button) sees the same, live list.
 export function useFavorites() {
-  const [favorites, setFavorites] = useState(() => getFavorites());
+  const favorites = useSyncExternalStore(
+    subscribeFavorites,
+    getFavorites,
+    getFavoritesServerSnapshot
+  );
 
-  const refresh = useCallback(() => {
-    setFavorites(getFavorites());
-  }, []);
-
-  const add = useCallback((track) => {
-    const added = addFavorite(track);
-    if (added) refresh();
-    return added;
-  }, [refresh]);
-
-  const remove = useCallback((trackId) => {
-    const removed = removeFavorite(trackId);
-    if (removed) refresh();
-    return removed;
-  }, [refresh]);
-
-  const check = useCallback((trackId) => {
-    return isFavorite(trackId);
-  }, []);
-
-  const toggle = useCallback((track) => {
-    const isNowFavorite = toggleFavorite(track);
-    refresh();
-    return isNowFavorite;
-  }, [refresh]);
+  const add = useCallback((track) => addFavorite(track), []);
+  const remove = useCallback((trackId) => removeFavorite(trackId), []);
+  const check = useCallback((trackId) => isFavorite(trackId), []);
+  const toggle = useCallback((track) => toggleFavorite(track), []);
 
   return {
     favorites,
@@ -38,6 +31,5 @@ export function useFavorites() {
     remove,
     isFavorite: check,
     toggle,
-    refresh,
   };
 }

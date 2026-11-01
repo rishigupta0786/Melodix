@@ -34,14 +34,14 @@ export default function TrackInfo({ track }) {
           </div>
         )}
       </div>
-      <div className="min-w-0">
+      <div className="w-full min-w-0 sm:w-auto sm:flex-1">
         <p className="text-xs font-medium uppercase tracking-wider text-accent">
           {track.genre}
         </p>
-        <h2 className="mt-1 truncate text-xl font-semibold text-text-primary sm:text-2xl">
+        <h2 className="mt-1 text-xl font-semibold leading-snug text-text-primary [overflow-wrap:anywhere] sm:text-2xl">
           {track.title}
         </h2>
-        <p className="mt-1 truncate text-sm text-text-secondary">{track.artist}</p>
+        <p className="mt-1 text-sm text-text-secondary [overflow-wrap:anywhere]">{track.artist}</p>
       </div>
     </div>
   );

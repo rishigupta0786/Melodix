@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 // IndexedDB for persisting directory handles
 const DB_NAME = "MusicPlayerDB";
@@ -133,15 +133,54 @@ async function scanDirectoryCapacitor(Filesystem, path, basePath = "") {
   return { folders, files };
 }
 
-function flattenFolders(folders, parentPath = "") {
+export function flattenFolders(folders) {
   const result = [];
   for (const folder of folders) {
     result.push(folder);
     if (folder.folders.length > 0) {
-      result.push(...flattenFolders(folder.folders, folder.path));
+      result.push(...flattenFolders(folder.folders));
     }
   }
   return result;
+}
+
+// Every file in a folder and all of its subfolders.
+export function collectFolderFiles(folder) {
+  return [...folder.files, ...folder.folders.flatMap(collectFolderFiles)];
+}
+
+function isNativeApp() {
+  return typeof window !== "undefined" && Boolean(window.Capacitor?.isNativePlatform?.());
+}
+
+const MIME_TYPES = {
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  ogg: "audio/ogg",
+  opus: "audio/ogg",
+  wav: "audio/wav",
+  webm: "audio/webm",
+};
+
+const mimeFor = (name) => MIME_TYPES[name.split(".").pop().toLowerCase()] || "audio/mpeg";
+
+function buildRoot(result, extras) {
+  return {
+    name: "Music Library",
+    path: "",
+    folders: result.folders,
+    files: result.files,
+    expanded: true,
+    ...extras,
+  };
+}
+
+// Web: remembered folder handles lose read access between sessions until the user re-grants it.
+async function hasReadAccess(handle) {
+  if (!handle.queryPermission) return true;
+  return (await handle.queryPermission({ mode: "read" })) === "granted";
 }
 
 export function useLocalMusic() {
@@ -149,312 +188,198 @@ export function useLocalMusic() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedFolderPath, setSelectedFolderPath] = useState(null);
-  const [allTracks, setAllTracks] = useState([]);
   const [isMobile, setIsMobile] = useState(false);
   const [Filesystem, setFilesystem] = useState(null);
-  
+  const [Preferences, setPreferences] = useState(null);
+  // Saved web folder whose read permission must be re-granted by a click
+  const [pendingHandle, setPendingHandle] = useState(null);
+
+  const allTracks = useMemo(() => (rootFolder ? collectFolderFiles(rootFolder) : []), [rootFolder]);
+
   // Detect platform on mount
   useEffect(() => {
-    const checkPlatform = async () => {
-      const mobile = typeof window !== "undefined" && window.Capacitor?.isNativePlatform;
-      setIsMobile(mobile);
-      
-      if (mobile) {
-        try {
-          const mod = await import("@capacitor/filesystem");
-          setFilesystem(mod.Filesystem);
-        } catch (e) {
-          console.warn("Capacitor Filesystem not available:", e);
-        }
+    const detectPlatform = async () => {
+      const native = isNativeApp();
+      setIsMobile(native);
+      if (!native) return;
+
+      try {
+        const [fs, prefs] = await Promise.all([
+          import("@capacitor/filesystem"),
+          import("@capacitor/preferences"),
+        ]);
+        setFilesystem(fs.Filesystem);
+        setPreferences(prefs.Preferences);
+      } catch (e) {
+        console.warn("Capacitor plugins not available:", e);
       }
     };
-    checkPlatform();
+    detectPlatform();
   }, []);
-  
-  // Load saved directory on mount
+
+  const loadWebHandle = useCallback(async (handle) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await scanDirectoryRecursive(handle);
+      setRootFolder(buildRoot(result, { handle }));
+      setPendingHandle(null);
+    } catch (e) {
+      setError(e.message || "Failed to read the music folder");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadMobilePath = useCallback(
+    async (fs, musicPath) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await scanDirectoryCapacitor(fs, musicPath, "");
+        setRootFolder(buildRoot(result, { fullPath: musicPath }));
+      } catch (e) {
+        setError(e.message || "Failed to read the music folder");
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
+
+  // Restore the previously chosen folder
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
-      if (isMobile && Filesystem) {
-        // Mobile: load from stored path
-        try {
-          const { getString } = await import("@capacitor/preferences");
-          const { value } = await getString({ key: "musicRootPath" });
-          if (value) {
-            setLoading(true);
-            const result = await scanDirectoryCapacitor(Filesystem, value, "");
-            setRootFolder({
-              name: "Music Library",
-              path: "",
-              fullPath: value,
-              folders: result.folders,
-              files: result.files,
-              expanded: true,
-            });
-            const allFiles = [];
-            function collectFiles(folders) {
-              for (const f of folders) {
-                allFiles.push(...f.files);
-                if (f.folders.length > 0) collectFiles(f.folders);
-              }
-            }
-            collectFiles(result.folders);
-            allFiles.push(...result.files);
-            setAllTracks(allFiles);
-            setLoading(false);
-          }
-        } catch (e) {
-          console.error("Failed to load mobile directory:", e);
-        }
-      } else {
-        // Web: load from IndexedDB
-        try {
+      try {
+        if (isMobile) {
+          if (!Filesystem || !Preferences) return;
+          const { value } = await Preferences.get({ key: "musicRootPath" });
+          if (value && !cancelled) await loadMobilePath(Filesystem, value);
+        } else {
           const handle = await getDirectoryHandle();
-          if (handle) {
-            setLoading(true);
-            const result = await scanDirectoryRecursive(handle);
-            setRootFolder({
-              name: "Music Library",
-              path: "",
-              handle,
-              folders: result.folders,
-              files: result.files,
-              expanded: true,
-            });
-            const allFiles = [];
-            function collectFiles(folders) {
-              for (const f of folders) {
-                allFiles.push(...f.files);
-                if (f.folders.length > 0) collectFiles(f.folders);
-              }
-            }
-            collectFiles(result.folders);
-            allFiles.push(...result.files);
-            setAllTracks(allFiles);
-            setLoading(false);
-          }
-        } catch (e) {
-          console.error("Failed to load web directory:", e);
+          if (!handle || cancelled) return;
+          if (await hasReadAccess(handle)) await loadWebHandle(handle);
+          else setPendingHandle(handle);
         }
+      } catch (e) {
+        console.error("Failed to restore music folder:", e);
       }
     };
     init();
-  }, [isMobile, Filesystem]);
-  
+    return () => {
+      cancelled = true;
+    };
+  }, [isMobile, Filesystem, Preferences, loadMobilePath, loadWebHandle]);
+
+  // Must run from a click: browsers only show the permission prompt for a user gesture.
+  const reconnect = useCallback(async () => {
+    if (!pendingHandle) return;
+    try {
+      const state = await pendingHandle.requestPermission({ mode: "read" });
+      if (state === "granted") await loadWebHandle(pendingHandle);
+      else setError("Permission was not granted. Choose the folder again to continue.");
+    } catch (e) {
+      setError(e.message || "Could not re-open the music folder");
+    }
+  }, [pendingHandle, loadWebHandle]);
+
   const pickDirectory = useCallback(async () => {
-    if (isMobile && Filesystem) {
-      // Mobile: Use Capacitor file picker or directory picker
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Try to use a directory picker approach
-        // For now, we'll use a simple approach - let user pick a file to determine the folder
-        // In a real app, you'd use a proper directory picker plugin
-        const { Filesystem: FS } = await import("@capacitor/filesystem");
-        const { Preferences } = await import("@capacitor/preferences");
-        
-        // For mobile, we'll ask user to pick a file from their music folder
-        // Then use that folder as the root
-        // Note: Capacitor doesn't have a built-in directory picker yet
-        // We'll use the Music directory as default
-        const musicPath = "Music"; // This is the public Music folder on Android
-        
-        // Check if it exists and has files
-        try {
-          await FS.readdir({ path: musicPath, directory: "EXTERNAL" });
-        } catch (e) {
-          setError("Could not access Music folder. Please ensure you have music files in your Music directory.");
-          setLoading(false);
-          return;
-        }
-        
-        await Preferences.set({ key: "musicRootPath", value: musicPath });
-        
-        const result = await scanDirectoryCapacitor(FS, musicPath, "");
-        setRootFolder({
-          name: "Music Library",
-          path: "",
-          fullPath: musicPath,
-          folders: result.folders,
-          files: result.files,
-          expanded: true,
-        });
-        
-        const allFiles = [];
-        function collectFiles(folders) {
-          for (const f of folders) {
-            allFiles.push(...f.files);
-            if (f.folders.length > 0) collectFiles(f.folders);
-          }
-        }
-        collectFiles(result.folders);
-        allFiles.push(...result.files);
-        setAllTracks(allFiles);
-        
-        setLoading(false);
-      } catch (e) {
-        setError(e.message || "Failed to access music folder");
-        setLoading(false);
-      }
-    } else {
-      // Web: File System Access API
-      if (!("showDirectoryPicker" in window)) {
-        setError("File System Access API not supported. Use Chrome/Edge on desktop.");
+    setError(null);
+
+    if (isMobile) {
+      if (!Filesystem || !Preferences) {
+        setError("File access is not ready yet. Try again in a moment.");
         return;
       }
-      
+      // Capacitor has no directory picker, so the public Music folder is used.
+      const musicPath = "Music";
       try {
-        setLoading(true);
-        setError(null);
-        
-        const handle = await window.showDirectoryPicker({
-          mode: "read",
-          startIn: "music",
-        });
-        
-        await saveDirectoryHandle(handle, "Music Library");
-        
-        const result = await scanDirectoryRecursive(handle);
-        setRootFolder({
-          name: "Music Library",
-          path: "",
-          handle,
-          folders: result.folders,
-          files: result.files,
-          expanded: true,
-        });
-        
-        const allFiles = [];
-        function collectFiles(folders) {
-          for (const f of folders) {
-            allFiles.push(...f.files);
-            if (f.folders.length > 0) collectFiles(f.folders);
-          }
-        }
-        collectFiles(result.folders);
-        allFiles.push(...result.files);
-        setAllTracks(allFiles);
-        
-        setLoading(false);
-      } catch (e) {
-        if (e.name !== "AbortError") {
-          setError(e.message || "Failed to select directory");
-        }
-        setLoading(false);
+        await Filesystem.readdir({ path: musicPath, directory: "EXTERNAL" });
+      } catch {
+        setError("Could not access Music folder. Please ensure you have music files in your Music directory.");
+        return;
       }
+      await Preferences.set({ key: "musicRootPath", value: musicPath });
+      await loadMobilePath(Filesystem, musicPath);
+      return;
     }
-  }, [isMobile, Filesystem]);
-  
+
+    if (!("showDirectoryPicker" in window)) {
+      setError("File System Access API not supported. Use Chrome/Edge on desktop.");
+      return;
+    }
+
+    try {
+      const handle = await window.showDirectoryPicker({ mode: "read", startIn: "music" });
+      await saveDirectoryHandle(handle, "Music Library");
+      await loadWebHandle(handle);
+    } catch (e) {
+      if (e.name !== "AbortError") setError(e.message || "Failed to select directory");
+    }
+  }, [isMobile, Filesystem, Preferences, loadMobilePath, loadWebHandle]);
+
   const removeDirectory = useCallback(async () => {
     if (isMobile) {
-      const { Preferences } = await import("@capacitor/preferences");
-      await Preferences.remove({ key: "musicRootPath" });
+      await Preferences?.remove({ key: "musicRootPath" });
     } else {
       await clearDirectoryHandle();
     }
     setRootFolder(null);
-    setAllTracks([]);
+    setPendingHandle(null);
     setSelectedFolderPath(null);
-  }, [isMobile]);
-  
+  }, [isMobile, Preferences]);
+
   const toggleFolder = useCallback((folderPath) => {
     setRootFolder((prev) => {
       if (!prev) return null;
-      const updateFolder = (folder) => {
-        if (folder.path === folderPath) {
-          return { ...folder, expanded: !folder.expanded };
-        }
-        return {
-          ...folder,
-          folders: folder.folders.map(updateFolder),
-        };
-      };
-      return updateFolder(prev);
+      const update = (folder) =>
+        folder.path === folderPath
+          ? { ...folder, expanded: !folder.expanded }
+          : { ...folder, folders: folder.folders.map(update) };
+      return update(prev);
     });
   }, []);
-  
+
   const selectFolder = useCallback((folderPath) => {
     setSelectedFolderPath(folderPath);
   }, []);
-  
-  const getTracksForFolder = useCallback((folderPath) => {
-    if (!rootFolder) return [];
-    if (folderPath === "" || folderPath === rootFolder.path) {
-      return rootFolder.files;
-    }
-    const folder = flattenFolders(rootFolder.folders).find((f) => f.path === folderPath);
-    return folder?.files || [];
-  }, [rootFolder]);
-  
-  const getAllTracks = useCallback(() => {
-    return allTracks;
-  }, [allTracks]);
-  
-  // Create object URL for a file (web) or get file URI (mobile)
-  const createObjectURL = useCallback(async (track) => {
-    if (isMobile && Filesystem && track.fullPath) {
-      // On mobile, read file as base64 and create blob URL
+
+  // Tracks in a folder and everything below it; the root ("") returns the whole library.
+  const getTracksForFolder = useCallback(
+    (folderPath) => {
+      if (!rootFolder) return [];
+      if (folderPath === "" || folderPath === rootFolder.path) return allTracks;
+      const folder = flattenFolders(rootFolder.folders).find((f) => f.path === folderPath);
+      return folder ? collectFolderFiles(folder) : [];
+    },
+    [rootFolder, allTracks]
+  );
+
+  // Playable URL for a track: object URL on web, blob URL built from the file on mobile.
+  // Callers own the result and should URL.revokeObjectURL it when done.
+  const createObjectURL = useCallback(
+    async (track) => {
       try {
-        const result = await Filesystem.readFile({
-          path: track.fullPath,
-          directory: "EXTERNAL",
-          encoding: "base64",
-        });
-        // Convert base64 to blob URL
-        const byteString = atob(result.data);
-        const mimeType = track.name.toLowerCase().endsWith(".mp3") ? "audio/mpeg" :
-                         track.name.toLowerCase().endsWith(".m4a") ? "audio/mp4" :
-                         track.name.toLowerCase().endsWith(".aac") ? "audio/aac" :
-                         track.name.toLowerCase().endsWith(".flac") ? "audio/flac" :
-                         track.name.toLowerCase().endsWith(".ogg") ? "audio/ogg" :
-                         track.name.toLowerCase().endsWith(".wav") ? "audio/wav" :
-                         "audio/mpeg";
-        const arrayBuffer = new ArrayBuffer(byteString.length);
-        const uint8Array = new Uint8Array(arrayBuffer);
-        for (let i = 0; i < byteString.length; i++) {
-          uint8Array[i] = byteString.charCodeAt(i);
+        if (isMobile && Filesystem && track.fullPath) {
+          const result = await Filesystem.readFile({
+            path: track.fullPath,
+            directory: "EXTERNAL",
+          });
+          const bytes = Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0));
+          return URL.createObjectURL(new Blob([bytes], { type: mimeFor(track.name) }));
         }
-        const blob = new Blob([arrayBuffer], { type: mimeType });
-        return URL.createObjectURL(blob);
+        if (track.handle) {
+          return URL.createObjectURL(await track.handle.getFile());
+        }
       } catch (e) {
-        console.error("Failed to read mobile file:", e);
-        return null;
+        console.error("Failed to open local file:", e);
       }
-    } else if (track.handle) {
-      const file = await track.handle.getFile();
-      return URL.createObjectURL(file);
-    }
-    return null;
-  }, [isMobile, Filesystem]);
-  
-  // Get track metadata
-  const getTrackMetadata = useCallback(async (track) => {
-    const url = await createObjectURL(track);
-    if (!url) return { duration: 0, title: track.name.replace(/\.[^.]+$/, ""), artist: "Unknown Artist" };
-    
-    return new Promise((resolve) => {
-      const audio = new Audio();
-      audio.preload = "metadata";
-      audio.onloadedmetadata = () => {
-        if (!isMobile) URL.revokeObjectURL(url);
-        resolve({
-          duration: audio.duration,
-          title: track.name.replace(/\.[^.]+$/, ""),
-          artist: "Unknown Artist",
-        });
-      };
-      audio.onerror = () => {
-        if (!isMobile) URL.revokeObjectURL(url);
-        resolve({
-          duration: 0,
-          title: track.name.replace(/\.[^.]+$/, ""),
-          artist: "Unknown Artist",
-        });
-      };
-      audio.src = url;
-    });
-  }, [createObjectURL, isMobile]);
-  
+      return null;
+    },
+    [isMobile, Filesystem]
+  );
+
   return {
     rootFolder,
     loading,
@@ -463,13 +388,13 @@ export function useLocalMusic() {
     allTracks,
     pickDirectory,
     removeDirectory,
+    reconnect,
     toggleFolder,
     selectFolder,
     getTracksForFolder,
-    getAllTracks,
     createObjectURL,
-    getTrackMetadata,
     hasPermission: !!rootFolder,
+    needsReconnect: !rootFolder && !!pendingHandle,
     isMobile,
   };
 }

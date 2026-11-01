@@ -12,6 +12,9 @@ const nextConfig = {
   // React 19 + Next.js 16 compatibility
   reactStrictMode: true,
 
+  // Native binaries used by the song download route
+  serverExternalPackages: ['youtube-dl-exec', 'ffmpeg-static'],
+
   // Experimental features for better mobile performance
   experimental: {
     optimizePackageImports: ['react', 'react-dom'],

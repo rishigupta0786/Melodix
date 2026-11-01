@@ -3,6 +3,7 @@
 import TrackInfo from "./TrackInfo";
 import ProgressBar from "./ProgressBar";
 import PlayerControls from "./PlayerControls";
+import { FavoriteButton, DownloadButton } from "./TrackActions";
 
 function StatusMessage({ children }) {
   return (
@@ -28,6 +29,7 @@ export default function MusicPlayer({
   onVolumeChange,
   onToggleMute,
   onSeek,
+  controlsOnMobile = false,
 }) {
   const controlsDisabled = isLoading || Boolean(error) || isEmpty;
 
@@ -50,8 +52,8 @@ export default function MusicPlayer({
         disabled={controlsDisabled}
       />
 
-      {/* PlayerControls hidden on mobile (shown in fixed bottom bar instead) */}
-      <div className="hidden lg:block">
+      {/* On mobile the controls normally live in the page's fixed bottom bar, unless controlsOnMobile is set */}
+      <div className={controlsOnMobile ? "block" : "hidden lg:block"}>
         <PlayerControls
           isPlaying={isPlaying}
           onTogglePlay={onTogglePlay}
@@ -62,6 +64,8 @@ export default function MusicPlayer({
           isMuted={isMuted}
           onVolumeChange={onVolumeChange}
           onToggleMute={onToggleMute}
+          leading={<FavoriteButton track={track} disabled={controlsDisabled} />}
+          trailing={<DownloadButton track={track} disabled={controlsDisabled} />}
         />
       </div>
     </div>

@@ -19,7 +19,8 @@
     "cap:run:android:dev": "npx cap run android -l --external",
     "mobile:build": "npm run build && npx cap sync android",
     "mobile:apk": "cd android && ./gradlew assembleDebug",
-    "mobile:apk:release": "cd android && ./gradlew assembleRelease"
+    "mobile:apk:release": "cd android && ./gradlew assembleRelease",
+    "postinstall": "node scripts/setup.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",
@@ -34,11 +35,13 @@
     "@hono/zod-openapi": "^1.6.3",
     "@hono/zod-validator": "^0.9.1",
     "@scalar/hono-api-reference": "^0.12.0",
+    "ffmpeg-static": "^5.3.0",
     "hono": "^4.13.7",
     "next": "16.3.3",
     "node-forge": "^1.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "youtube-dl-exec": "^3.1.19",
     "zod": "^4.5.4"
   },
   "devDependencies": {

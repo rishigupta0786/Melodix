@@ -50,3 +50,5 @@ next-env.d.ts
 *.aab
 *.keystore
 *.jks
+# yt-dlp binary (downloaded by scripts/setup.mjs)
+bin/

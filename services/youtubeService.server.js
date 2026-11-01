@@ -13,11 +13,11 @@ if (!YOUTUBE_API_KEY) {
 function decodeEntities(text) {
   if (!text) return text;
   return text
-    .replace(/&/g, "&")
-    .replace(/"/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/</g, "<")
-    .replace(/>/g, ">");
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
 }
 
 function normalizeYouTubeItem(item) {

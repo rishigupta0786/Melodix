@@ -1,129 +1,166 @@
 "use client";
 
-import { useState } from "react";
-import { useLocalMusic } from "@/hooks/useLocalMusic";
+import { useMemo, useState } from "react";
+import { flattenFolders } from "@/hooks/useLocalMusic";
+import { useFavorites } from "@/hooks/useFavorites";
+import { folderOf, toLocalTrack, toStoredLocalTrack } from "@/services/localTrack";
 
-function formatDuration(seconds) {
-  if (!seconds || seconds < 0) return "";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
+const FOLDER_ICON = "M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z";
+const NOTE_ICON = "M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z";
+const HEART_ICON =
+  "M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z";
+
+function Equalizer() {
+  return (
+    <span className="flex h-4 items-end gap-0.5" aria-hidden="true">
+      {[0, 0.25, 0.5].map((delay) => (
+        <span
+          key={delay}
+          className="eq-bar w-1 rounded-full bg-accent"
+          style={{ height: "100%", animationDelay: `${delay}s` }}
+        />
+      ))}
+    </span>
+  );
 }
 
-function FolderItem({ 
-  folder, 
-  level = 0, 
-  selectedPath, 
-  onToggle, 
-  onSelect, 
-  trackCount 
-}) {
+function FolderTreeItem({ folder, level = 0, selectedPath, onToggle, onSelect }) {
   const hasChildren = folder.folders.length > 0;
-  const isExpanded = folder.expanded;
   const isSelected = selectedPath === folder.path;
-  const indent = level * 16;
-  
+  const count = useMemo(() => countFiles(folder), [folder]);
+
   return (
     <div className="flex flex-col">
       <button
         type="button"
         onClick={() => onSelect(folder.path)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onSelect(folder.path);
-          }
-        }}
-        className={`flex items-center gap-2 w-full px-3 py-2 text-left rounded-lg transition-colors ${
-          isSelected ? "bg-white/10 text-text-primary" : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
+        className={`focus-ring flex w-full items-center gap-2 rounded-lg py-2 pr-3 text-left text-sm transition-colors ${
+          isSelected
+            ? "bg-accent/20 text-text-primary"
+            : "text-zinc-300 hover:bg-white/10 hover:text-text-primary"
         }`}
-        style={{ paddingLeft: `${12 + indent}px` }}
+        style={{ paddingLeft: `${8 + level * 14}px` }}
       >
-        {hasChildren && (
-          <span 
+        {hasChildren ? (
+          <span
+            role="button"
+            tabIndex={-1}
+            aria-label={folder.expanded ? "Collapse folder" : "Expand folder"}
             onClick={(e) => {
               e.stopPropagation();
               onToggle(folder.path);
             }}
-            className="flex shrink-0 items-center justify-center h-6 w-6 text-xs transition-transform"
-            style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded transition-transform hover:bg-white/10"
+            style={{ transform: folder.expanded ? "rotate(90deg)" : "none" }}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
               <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" fill="currentColor" />
             </svg>
           </span>
+        ) : (
+          <span className="h-5 w-5 shrink-0" />
         )}
-        {!hasChildren && <span className="flex shrink-0 h-6 w-6" />}
-        <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0 text-text-tertiary" aria-hidden="true">
-          <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" fill="currentColor" />
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-accent" aria-hidden="true">
+          <path d={FOLDER_ICON} fill="currentColor" />
         </svg>
-        <span className="truncate font-medium">{folder.name}</span>
-        <span className="ml-auto text-xs text-text-tertiary">
-          {trackCount} track{trackCount !== 1 ? "s" : ""}
-        </span>
+        <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+        <span className="text-xs tabular-nums text-text-secondary">{count}</span>
       </button>
-      
-      {isExpanded && hasChildren && (
-        <div className="flex flex-col">
-          {folder.folders.map((subFolder) => (
-            <FolderItem
-              key={subFolder.path}
-              folder={subFolder}
-              level={level + 1}
-              selectedPath={selectedPath}
-              onToggle={onToggle}
-              onSelect={onSelect}
-              trackCount={subFolder.files.length + subFolder.folders.reduce((a, b) => a + b.files.length, 0)}
-            />
-          ))}
-        </div>
-      )}
+
+      {folder.expanded &&
+        folder.folders.map((sub) => (
+          <FolderTreeItem
+            key={sub.path}
+            folder={sub}
+            level={level + 1}
+            selectedPath={selectedPath}
+            onToggle={onToggle}
+            onSelect={onSelect}
+          />
+        ))}
     </div>
   );
 }
 
-function TrackList({ tracks, onPlay, currentTrackId, isPlaying }) {
-  if (tracks.length === 0) {
-    return (
-      <div className="flex min-h-[5rem] items-center justify-center text-center px-4">
-        <p className="text-sm text-text-secondary">No audio files in this folder</p>
-      </div>
-    );
-  }
-  
+function countFiles(folder) {
+  return folder.files.length + folder.folders.reduce((sum, f) => sum + countFiles(f), 0);
+}
+
+function TrackRow({ file, isCurrent, isPlaying, onPlay }) {
+  const { isFavorite, toggle } = useFavorites();
+  const track = toLocalTrack(file);
+  const favorite = isFavorite(track.id);
+
   return (
-    <ul className="flex flex-col gap-1" role="list">
-      {tracks.map((track) => (
-        <li key={track.path} className="glass-panel flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-white/10">
-          <button
-            type="button"
-            onClick={() => onPlay(track)}
-            className="focus-ring flex shrink-0 items-center justify-center h-9 w-9 rounded-full text-text-primary hover:bg-white/10 hover:text-accent transition-colors"
-            aria-label={`Play ${track.name}`}
+    <li
+      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
+        isCurrent ? "bg-accent/15" : "hover:bg-white/10"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => onPlay(file)}
+        aria-label={`Play ${track.title}`}
+        className="focus-ring flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
+        <span
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${
+            isCurrent ? "bg-accent/25 text-accent" : "bg-white/5 text-text-secondary"
+          }`}
+        >
+          {isCurrent && isPlaying ? (
+            <Equalizer />
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+              <path d={NOTE_ICON} fill="currentColor" />
+            </svg>
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span
+            className={`block truncate text-sm font-medium ${isCurrent ? "text-accent-strong" : "text-text-primary"}`}
           >
-            {currentTrackId === track.path && isPlaying ? (
-              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                <rect x="6" y="4" width="4" height="16" fill="currentColor" />
-                <rect x="14" y="4" width="4" height="16" fill="currentColor" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                <polygon points="7,4 20,12 7,20" fill="currentColor" />
-              </svg>
-            )}
-          </button>
-          <div className="flex-1 min-w-0">
-            <h3 className="truncate text-sm font-medium text-text-primary">
-              {track.name.replace(/\.[^.]+$/, "")}
-            </h3>
-          </div>
-        </li>
-      ))}
-    </ul>
+            {track.title}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-text-secondary">{track.artist}</span>
+        </span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => toggle(toStoredLocalTrack(track))}
+        aria-label={favorite ? `Remove ${track.title} from favorites` : `Add ${track.title} to favorites`}
+        aria-pressed={favorite}
+        className={`focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+          favorite ? "text-accent" : "text-text-secondary hover:bg-white/10 hover:text-accent"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" className={`h-5 w-5 ${favorite ? "fill-current" : ""}`} aria-hidden="true">
+          <path d={HEART_ICON} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </li>
   );
 }
 
-export default function LocalMusic({ onPlayTrack }) {
+function EmptyState({ title, children, action, error }) {
+  return (
+    <div className="glass-panel flex min-h-[18rem] flex-col items-center justify-center rounded-3xl px-6 py-8 text-center">
+      <svg viewBox="0 0 24 24" className="mb-4 h-14 w-14 text-accent" aria-hidden="true">
+        <path d={NOTE_ICON} fill="currentColor" />
+      </svg>
+      <h2 className="mb-2 text-lg font-semibold text-text-primary">{title}</h2>
+      <p className="mb-6 max-w-md text-sm text-text-secondary">{children}</p>
+      {action}
+      {error && <p className="mt-4 max-w-md text-sm text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+const primaryButton =
+  "focus-ring flex items-center gap-2 rounded-xl bg-accent px-6 py-3 font-medium text-[#0a0a0d] transition-colors hover:bg-accent-strong disabled:opacity-50";
+
+export default function LocalMusic({ library, currentTrackId, isPlaying, onPlayTrack }) {
   const {
     rootFolder,
     loading,
@@ -131,123 +168,201 @@ export default function LocalMusic({ onPlayTrack }) {
     selectedFolderPath,
     allTracks,
     pickDirectory,
-    removeDirectory,
+    reconnect,
     toggleFolder,
     selectFolder,
     getTracksForFolder,
     hasPermission,
+    needsReconnect,
     isMobile,
-  } = useLocalMusic();
-  
-  const [showPicker, setShowPicker] = useState(false);
-  
-  const tracksInSelectedFolder = selectedFolderPath !== null 
-    ? getTracksForFolder(selectedFolderPath)
-    : [];
-  
+  } = library;
+
+  const [query, setQuery] = useState("");
+  const activePath = selectedFolderPath ?? "";
+
+  const folders = useMemo(() => (rootFolder ? flattenFolders(rootFolder.folders) : []), [rootFolder]);
+
+  const visibleTracks = useMemo(() => {
+    const scope = getTracksForFolder(activePath);
+    const needle = query.trim().toLowerCase();
+    if (!needle) return scope;
+    return scope.filter((file) => `${file.name} ${folderOf(file.path)}`.toLowerCase().includes(needle));
+  }, [getTracksForFolder, activePath, query]);
+
   if (!hasPermission) {
-    return (
-      <div className="glass-panel flex flex-col items-center justify-center min-h-[20rem] rounded-3xl px-6 py-8 text-center">
-        <svg viewBox="0 0 24 24" className="h-16 w-16 text-text-tertiary mb-4" aria-hidden="true">
-          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill="currentColor" />
-        </svg>
-        <h2 className="text-lg font-semibold text-text-primary mb-2">Select Your Music Folder</h2>
-        <p className="text-sm text-text-secondary mb-6 max-w-md">
-          {isMobile 
-            ? "The app will scan your Music folder for audio files. Make sure you have music files in your device's Music directory."
-            : "Choose a folder containing your music files. The app will scan it and all subfolders for audio files."
+    if (loading) {
+      return (
+        <EmptyState title="Scanning your music…">This can take a moment for large libraries.</EmptyState>
+      );
+    }
+    if (needsReconnect) {
+      return (
+        <EmptyState
+          title="Welcome back"
+          error={error}
+          action={
+            <div className="flex flex-col items-center gap-3">
+              <button type="button" onClick={reconnect} className={primaryButton}>
+                Reconnect music folder
+              </button>
+              <button
+                type="button"
+                onClick={pickDirectory}
+                className="focus-ring text-sm text-text-secondary underline-offset-4 hover:text-text-primary hover:underline"
+              >
+                Choose a different folder
+              </button>
+            </div>
           }
-        </p>
-        <button
-          type="button"
-          onClick={() => setShowPicker(true)}
-          disabled={loading}
-          className="focus-ring flex items-center gap-2 rounded-xl px-6 py-3 bg-accent text-white font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
         >
-          <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-            <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" fill="currentColor" />
-          </svg>
-          {loading ? "Scanning..." : isMobile ? "Scan Music Folder" : "Choose Music Folder"}
-        </button>
-        {error && (
-          <p className="mt-4 text-sm text-red-400">{error}</p>
-        )}
+          Your browser needs permission again to read your music folder. Your files never leave this device.
+        </EmptyState>
+      );
+    }
+    return (
+      <EmptyState
+        title="Select Your Music Folder"
+        error={error}
+        action={
+          <button type="button" onClick={pickDirectory} className={primaryButton}>
+            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+              <path d={FOLDER_ICON} fill="currentColor" />
+            </svg>
+            {isMobile ? "Scan Music Folder" : "Choose Music Folder"}
+          </button>
+        }
+      >
+        {isMobile
+          ? "The app will scan your Music folder for audio files. Make sure you have music files in your device's Music directory."
+          : "Choose a folder containing your music files. The app will scan it and all subfolders for audio files."}
         {!isMobile && (
-          <p className="mt-4 text-xs text-text-tertiary">
-            Requires Chrome/Edge (File System Access API)
-          </p>
+          <span className="mt-3 block text-xs text-text-secondary">Requires Chrome or Edge.</span>
         )}
-      </div>
+      </EmptyState>
     );
   }
-  
+
+  const heading = activePath === "" ? "All Tracks" : folders.find((f) => f.path === activePath)?.name;
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        <div className="flex items-center gap-3">
-          <svg viewBox="0 0 24 24" className="h-6 w-6 text-accent" aria-hidden="true">
-            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill="currentColor" />
-          </svg>
-          <span className="font-medium text-text-primary">Local Music</span>
-          <span className="text-xs text-text-tertiary">({allTracks.length} tracks)</span>
+    <div className="flex w-full flex-col gap-4">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <div className="min-w-0">
+          <h2 className="truncate text-base font-semibold text-text-primary">Local Music</h2>
+          <p className="text-xs text-text-secondary">
+            {allTracks.length} track{allTracks.length !== 1 ? "s" : ""} · {folders.length} folder
+            {folders.length !== 1 ? "s" : ""}
+          </p>
         </div>
         <button
           type="button"
-          onClick={() => setShowPicker(true)}
-          className="focus-ring flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-lg transition-colors"
+          onClick={pickDirectory}
+          disabled={loading}
+          className="focus-ring flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-white/10 hover:text-text-primary disabled:opacity-50"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-            <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" fill="currentColor" />
+            <path d={FOLDER_ICON} fill="currentColor" />
           </svg>
-          Change Folder
+          {loading ? "Scanning…" : "Change Folder"}
         </button>
       </div>
-      
-      {/* Folder Tree + Track List */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Folder Tree Sidebar */}
-        <div className="w-72 flex-shrink-0 border-r border-border overflow-y-auto bg-white/5">
-          <div className="p-2">
-            <FolderItem
-              folder={{
-                ...rootFolder,
-                name: "📁 " + rootFolder.name,
-              }}
-              level={0}
-              selectedPath={selectedFolderPath}
+
+      <div className="relative">
+        <svg
+          viewBox="0 0 24 24"
+          className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
+          <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search your music…"
+          aria-label="Search local music"
+          className="focus-ring glass-panel w-full rounded-xl py-3 pl-10 pr-4 text-sm text-text-primary placeholder:text-text-secondary"
+        />
+      </div>
+
+      {/* Mobile: folders as scrollable chips */}
+      <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 lg:hidden" role="tablist" aria-label="Folders">
+        {[{ path: "", name: "All", count: allTracks.length }, ...folders.map((f) => ({
+          path: f.path,
+          name: f.name,
+          count: countFiles(f),
+        }))].map((chip) => (
+          <button
+            key={chip.path || "all"}
+            type="button"
+            role="tab"
+            aria-selected={activePath === chip.path}
+            onClick={() => selectFolder(chip.path)}
+            className={`focus-ring shrink-0 rounded-full px-4 py-2 text-sm transition-colors ${
+              activePath === chip.path
+                ? "bg-accent text-[#0a0a0d] font-medium"
+                : "glass-panel text-zinc-300 hover:text-text-primary"
+            }`}
+          >
+            {chip.name} <span className="opacity-70">{chip.count}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-start gap-4">
+        {/* Desktop: folder tree */}
+        <aside className="glass-panel hidden max-h-[60vh] w-64 shrink-0 overflow-y-auto rounded-2xl p-2 lg:block">
+          <button
+            type="button"
+            onClick={() => selectFolder("")}
+            className={`focus-ring flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+              activePath === "" ? "bg-accent/20 text-text-primary" : "text-zinc-300 hover:bg-white/10"
+            }`}
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4 text-accent" aria-hidden="true">
+              <path d={NOTE_ICON} fill="currentColor" />
+            </svg>
+            <span className="flex-1">All Tracks</span>
+            <span className="text-xs tabular-nums text-text-secondary">{allTracks.length}</span>
+          </button>
+          {rootFolder.folders.map((folder) => (
+            <FolderTreeItem
+              key={folder.path}
+              folder={folder}
+              selectedPath={activePath}
               onToggle={toggleFolder}
               onSelect={selectFolder}
-              trackCount={allTracks.length}
             />
+          ))}
+        </aside>
+
+        <section className="glass-panel min-w-0 flex-1 overflow-hidden rounded-2xl" aria-label={heading}>
+          <div className="border-b border-white/10 px-4 py-3">
+            <h3 className="truncate text-sm font-medium text-text-primary">{heading}</h3>
+            <p className="text-xs text-text-secondary">
+              {visibleTracks.length} track{visibleTracks.length !== 1 ? "s" : ""}
+              {query.trim() ? " found" : ""}
+            </p>
           </div>
-        </div>
-        
-        {/* Track List */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {selectedFolderPath === null ? (
-            <div className="glass-panel flex flex-col items-center justify-center min-h-[20rem] rounded-3xl px-6 py-8 text-center">
-              <svg viewBox="0 0 24 24" className="h-16 w-16 text-text-tertiary mb-4" aria-hidden="true">
-                <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z" fill="currentColor" />
-              </svg>
-              <h3 className="text-lg font-medium text-text-primary mb-1">Select a Folder</h3>
-              <p className="text-sm text-text-secondary">Click a folder on the left to view its tracks</p>
-            </div>
+          {visibleTracks.length === 0 ? (
+            <p className="px-4 py-10 text-center text-sm text-text-secondary">
+              {query.trim() ? "No songs match your search." : "No audio files in this folder."}
+            </p>
           ) : (
-            <div className="glass-panel flex flex-col rounded-3xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-border bg-white/5">
-                <h3 className="font-medium text-text-primary truncate">
-                  {selectedFolderPath === "" ? "All Tracks" : selectedFolderPath.split("/").pop()}
-                </h3>
-                <p className="text-xs text-text-tertiary">{tracksInSelectedFolder.length} track{tracksInSelectedFolder.length !== 1 ? "s" : ""}</p>
-              </div>
-              <TrackList
-                tracks={tracksInSelectedFolder}
-                onPlay={(track) => onPlayTrack?.(track)}
-              />
-            </div>
+            <ul className="flex flex-col gap-0.5 p-2" role="list">
+              {visibleTracks.map((file) => (
+                <TrackRow
+                  key={file.path}
+                  file={file}
+                  isCurrent={currentTrackId === `local-${file.path}`}
+                  isPlaying={isPlaying}
+                  onPlay={(f) => onPlayTrack(f, visibleTracks)}
+                />
+              ))}
+            </ul>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

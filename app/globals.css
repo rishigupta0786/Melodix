@@ -63,3 +63,72 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Download progress */
+@keyframes download-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes download-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.download-toast {
+  animation: download-toast-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+.download-bar-fill {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(90deg, #7c3aed, var(--color-accent), var(--color-accent-strong));
+  box-shadow: 0 0 12px rgba(167, 139, 250, 0.7);
+}
+
+.download-bar-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: download-shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .download-toast,
+  .download-bar-fill::after {
+    animation: none;
+  }
+}
+
+/* Now-playing equalizer bars (Local list) */
+@keyframes eq-bounce {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.eq-bar {
+  transform-origin: bottom;
+  animation: eq-bounce 0.9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eq-bar {
+    animation: none;
+  }
+}

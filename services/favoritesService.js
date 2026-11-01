@@ -3,14 +3,44 @@
 
 const FAVORITES_STORAGE_KEY = "music_favorites";
 
+const EMPTY_FAVORITES = [];
+const listeners = new Set();
+// Cached so getSnapshot() returns a stable reference until favorites change.
+let snapshot = null;
+
 function getFavoritesFromStorage() {
-  if (typeof window === "undefined") return [];
+  if (typeof window === "undefined") return EMPTY_FAVORITES;
+  if (snapshot) return snapshot;
   try {
     const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    snapshot = stored ? JSON.parse(stored) : EMPTY_FAVORITES;
   } catch {
-    return [];
+    snapshot = EMPTY_FAVORITES;
   }
+  return snapshot;
+}
+
+function emitChange() {
+  snapshot = null;
+  listeners.forEach((listener) => listener());
+}
+
+// Lets every useFavorites() consumer re-render when favorites change anywhere
+// (including other tabs, via the storage event).
+export function subscribeFavorites(listener) {
+  listeners.add(listener);
+  const onStorage = (event) => {
+    if (event.key === FAVORITES_STORAGE_KEY) emitChange();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+export function getFavoritesServerSnapshot() {
+  return EMPTY_FAVORITES;
 }
 
 function saveFavoritesToStorage(favorites) {
@@ -20,6 +50,7 @@ function saveFavoritesToStorage(favorites) {
   } catch (error) {
     console.error("Failed to save favorites:", error);
   }
+  emitChange();
 }
 
 export function getFavorites() {

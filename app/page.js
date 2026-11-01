@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Sidebar from "@/components/Sidebar";
+import DownloadSettings from "@/components/DownloadSettings";
 import MobileGenreSelector from "@/components/MobileGenreSelector";
 import MusicPlayer from "@/components/MusicPlayer";
 import PlayerControls from "@/components/PlayerControls";
+import { FavoriteButton, DownloadButton } from "@/components/TrackActions";
 import WallpaperBackground from "@/components/WallpaperBackground";
 import YouTubeSearch from "@/components/YouTubeSearch";
 import YouTubeResultCard from "@/components/YouTubeResultCard";
@@ -15,6 +17,7 @@ import { useWallpaperRotation } from "@/hooks/useWallpaperRotation";
 import { useYouTubeSearch } from "@/hooks/useYouTubeSearch";
 import { useFavorites } from "@/hooks/useFavorites";
 import { useLocalMusic } from "@/hooks/useLocalMusic";
+import { toLocalTrack } from "@/services/localTrack";
 import { GENRES } from "@/services/genres";
 
 export default function Home() {
@@ -22,7 +25,6 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState("online"); // 'online', 'youtube', 'local'
   const [activeGenre, setActiveGenre] = useState(GENRES[0].id);
   const [showYouTubeSearch, setShowYouTubeSearch] = useState(false);
-  const [activeYouTubeTab, setActiveYouTubeTab] = useState("search"); // 'search', 'favorites'
 
   // Section definitions
   const sections = useMemo(() => [
@@ -34,21 +36,23 @@ export default function Home() {
     {
       id: "youtube",
       label: "YouTube",
-      items: [
-        { id: "search", label: "Search" },
-        { id: "favorites", label: "Favorites" },
-      ],
+      items: [{ id: "search", label: "Search" }],
     },
     {
       id: "local",
       label: "Local",
-      items: [], // Local music folders loaded dynamically
+      items: [], // Local music folders are browsed inside the section itself
+    },
+    {
+      id: "favorites",
+      label: "Favorites",
+      items: [], // Saved songs from every source (Online, YouTube, Local)
     },
   ], []);
 
   // Capacitor Splash Screen - hide when app is ready
   useEffect(() => {
-    if (typeof window !== "undefined" && window.Capacitor?.isNativePlatform) {
+    if (typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.()) {
       import("@capacitor/splash-screen").then(({ SplashScreen }) => {
         SplashScreen.hide();
       }).catch(() => {});
@@ -80,33 +84,37 @@ export default function Home() {
 
   // Favorites
   const { favorites, toggle: toggleFavorite } = useFavorites();
+  const [favoritesQuery, setFavoritesQuery] = useState("");
+  const visibleFavorites = useMemo(() => {
+    const needle = favoritesQuery.trim().toLowerCase();
+    if (!needle) return favorites;
+    return favorites.filter((track) =>
+      `${track.title} ${track.artist}`.toLowerCase().includes(needle)
+    );
+  }, [favorites, favoritesQuery]);
 
   // State to track the currently playing YouTube track
   const [currentYouTubeTrack, setCurrentYouTubeTrack] = useState(null);
 
-  // Local Music
-  const {
-    rootFolder: localRootFolder,
-    loading: localLoading,
-    error: localError,
-    allTracks: localAllTracks,
-    pickDirectory: localPickDirectory,
-    removeDirectory: localRemoveDirectory,
-    hasPermission: localHasPermission,
-  } = useLocalMusic();
+  // Local Music: one shared library so scanning/selection survive switching sections
+  const localLibrary = useLocalMusic();
+  const { allTracks: localAllTracks, createObjectURL: createLocalUrl } = localLibrary;
+  const [currentLocalTrack, setCurrentLocalTrack] = useState(null);
+  const localQueueRef = useRef([]);
+  const localUrlRef = useRef(null);
 
   const playNextYouTubeTrack = useCallback(() => {
     if (!currentYouTubeTrack) return;
     
     let nextTrack = null;
-    if (activeYouTubeTab === "favorites") {
-      const currentIndex = favorites.findIndex(t => t.id === currentYouTubeTrack.id);
-      if (currentIndex !== -1 && currentIndex < favorites.length - 1) {
-        nextTrack = favorites[currentIndex + 1];
-      } else if (favorites.length > 0) {
-        nextTrack = favorites[0]; // Loop back to start
+    if (activeSection === "favorites") {
+      const currentIndex = visibleFavorites.findIndex(t => t.id === currentYouTubeTrack.id);
+      if (currentIndex !== -1 && currentIndex < visibleFavorites.length - 1) {
+        nextTrack = visibleFavorites[currentIndex + 1];
+      } else if (visibleFavorites.length > 0) {
+        nextTrack = visibleFavorites[0]; // Loop back to start
       }
-    } else if (activeYouTubeTab === "search") {
+    } else if (activeSection === "youtube" || activeSection === "favorites") {
       const currentIndex = youtubeResults.findIndex(t => t.id === currentYouTubeTrack.id);
       if (currentIndex !== -1 && currentIndex < youtubeResults.length - 1) {
         nextTrack = youtubeResults[currentIndex + 1];
@@ -121,20 +129,20 @@ export default function Home() {
       // But wait, loadTrack is not in the dependency array yet. Let's just return nextTrack.
     }
     return nextTrack;
-  }, [currentYouTubeTrack, activeYouTubeTab, favorites, youtubeResults]);
+  }, [currentYouTubeTrack, activeSection, visibleFavorites, youtubeResults]);
 
   const playPreviousYouTubeTrack = useCallback(() => {
     if (!currentYouTubeTrack) return;
     
     let prevTrack = null;
-    if (activeYouTubeTab === "favorites") {
-      const currentIndex = favorites.findIndex(t => t.id === currentYouTubeTrack.id);
+    if (activeSection === "favorites") {
+      const currentIndex = visibleFavorites.findIndex(t => t.id === currentYouTubeTrack.id);
       if (currentIndex > 0) {
-        prevTrack = favorites[currentIndex - 1];
-      } else if (favorites.length > 0) {
-        prevTrack = favorites[favorites.length - 1]; // Loop to end
+        prevTrack = visibleFavorites[currentIndex - 1];
+      } else if (visibleFavorites.length > 0) {
+        prevTrack = visibleFavorites[visibleFavorites.length - 1]; // Loop to end
       }
-    } else if (activeYouTubeTab === "search") {
+    } else if (activeSection === "youtube" || activeSection === "favorites") {
       const currentIndex = youtubeResults.findIndex(t => t.id === currentYouTubeTrack.id);
       if (currentIndex > 0) {
         prevTrack = youtubeResults[currentIndex - 1];
@@ -147,26 +155,32 @@ export default function Home() {
       setCurrentYouTubeTrack(prevTrack);
     }
     return prevTrack;
-  }, [currentYouTubeTrack, activeYouTubeTab, favorites, youtubeResults]);
+  }, [currentYouTubeTrack, activeSection, visibleFavorites, youtubeResults]);
 
   const isAutoPlaying = useRef(false);
+  const [localStepRequest, setLocalStepRequest] = useState(null);
+  const requestLocalStep = useCallback((delta) => {
+    setLocalStepRequest((previous) => ({ delta, id: (previous?.id ?? 0) + 1 }));
+  }, []);
 
   // Unified player (handles both HTML5 audio and YouTube)
   const handleEnded = useCallback(() => {
     if (activeSection === "online") {
       goToNext();
-    } else if (activeSection === "youtube") {
+    } else if (activeSection === "youtube" || activeSection === "favorites") {
       const nextTrack = playNextYouTubeTrack();
       if (nextTrack) {
         isAutoPlaying.current = true;
       }
+    } else if (activeSection === "local") {
+      requestLocalStep(1);
     }
-  }, [activeSection, goToNext, playNextYouTubeTrack]);
+  }, [activeSection, goToNext, playNextYouTubeTrack, requestLocalStep]);
 
   const handleTrackError = useCallback(() => {
     if (activeSection === "online") {
       dropCurrentTrack();
-    } else if (activeSection === "youtube") {
+    } else if (activeSection === "youtube" || activeSection === "favorites") {
       const nextTrack = playNextYouTubeTrack();
       if (nextTrack) {
         isAutoPlaying.current = true;
@@ -195,22 +209,68 @@ export default function Home() {
     onError: handleTrackError,
   });
 
+  // Open a local file and start playing it. Returns false if the file could not be read.
+  const startLocalFile = useCallback(async (file) => {
+    const url = await createLocalUrl(file);
+    if (!url) return false;
+    const previousUrl = localUrlRef.current;
+    localUrlRef.current = url;
+    loadTrack({ ...toLocalTrack(file), streamUrl: url });
+    play();
+    if (previousUrl) URL.revokeObjectURL(previousUrl);
+    return true;
+  }, [createLocalUrl, loadTrack, play]);
+
+  // Move through the list the user last played from (wraps around)
+  const stepLocalTrack = useCallback((delta) => {
+    const queue = localQueueRef.current;
+    if (!queue.length || !currentLocalTrack) return;
+    const index = queue.findIndex((f) => `local-${f.path}` === currentLocalTrack.id);
+    const next = queue[(index + delta + queue.length) % queue.length];
+    setCurrentLocalTrack(toLocalTrack(next));
+    startLocalFile(next);
+  }, [currentLocalTrack, startLocalFile]);
+
+  // handleEnded is created before the player exists, so it asks for a step and this effect performs it
+  const stepLocalRef = useRef(null);
+  useEffect(() => {
+    stepLocalRef.current = stepLocalTrack;
+  }, [stepLocalTrack]);
+  useEffect(() => {
+    if (localStepRequest) stepLocalRef.current?.(localStepRequest.delta);
+  }, [localStepRequest]);
+
   // Derived state
-  const showYouTubePlayer = provider === "youtube";
+  // Everything played from the YouTube section (YouTube results/favorites, saved online songs) is audio-only,
+  // so it gets the audio player card; the YouTube video itself stays hidden.
+  const showYouTubeAudioPlayer =
+    (activeSection === "youtube" || activeSection === "favorites") &&
+    Boolean(currentYouTubeTrack) &&
+    (provider === "youtube" || provider === "saavn" || provider === "local");
+  const youtubeAudioTrack = currentYouTubeTrack && {
+    ...currentYouTubeTrack,
+    artwork: currentYouTubeTrack.artwork || currentYouTubeTrack.thumbnail,
+    genre: currentYouTubeTrack.provider === "youtube" ? "YouTube" : "Favorites",
+  };
 
   // Watch for currentYouTubeTrack changes from auto-play (next/prev)
   useEffect(() => {
     if (isAutoPlaying.current && currentYouTubeTrack) {
       isAutoPlaying.current = false;
-      loadTrack(currentYouTubeTrack);
+      if (currentYouTubeTrack.provider === "local") {
+        const file = localAllTracks.find((f) => `local-${f.path}` === currentYouTubeTrack.id);
+        if (file) startLocalFile(file);
+      } else {
+        loadTrack(currentYouTubeTrack);
+      }
     }
-  }, [currentYouTubeTrack, loadTrack]);
+  }, [currentYouTubeTrack, loadTrack, localAllTracks, startLocalFile]);
 
   // Load track into unified player when current track changes
   useEffect(() => {
     if (activeSection === "online") {
       loadTrack(queueCurrentTrack);
-    } else if (activeSection === "youtube") {
+    } else if (activeSection === "youtube" || activeSection === "favorites") {
       // Manual plays handle their own loadTrack calls
     }
   }, [activeSection, queueCurrentTrack, loadTrack]);
@@ -222,7 +282,7 @@ export default function Home() {
       } else {
         goToPrevious();
       }
-    } else if (activeSection === "youtube") {
+    } else if (activeSection === "youtube" || activeSection === "favorites") {
       if (currentTime > 3) {
         seek(0);
       } else {
@@ -231,19 +291,27 @@ export default function Home() {
           isAutoPlaying.current = true;
         }
       }
+    } else if (activeSection === "local") {
+      if (currentTime > 3) {
+        seek(0);
+      } else {
+        stepLocalTrack(-1);
+      }
     }
-  }, [activeSection, currentTime, seek, goToPrevious, playPreviousYouTubeTrack]);
+  }, [activeSection, currentTime, seek, goToPrevious, playPreviousYouTubeTrack, stepLocalTrack]);
 
   const handleNext = useCallback(() => {
     if (activeSection === "online") {
       goToNext();
-    } else if (activeSection === "youtube") {
+    } else if (activeSection === "youtube" || activeSection === "favorites") {
       const nextTrack = playNextYouTubeTrack();
       if (nextTrack) {
         isAutoPlaying.current = true;
       }
+    } else if (activeSection === "local") {
+      stepLocalTrack(1);
     }
-  }, [activeSection, goToNext, playNextYouTubeTrack]);
+  }, [activeSection, goToNext, playNextYouTubeTrack, stepLocalTrack]);
 
   // Section selection handlers
   const handleSelectSection = useCallback((sectionId) => {
@@ -254,18 +322,10 @@ export default function Home() {
     if (sectionId === "online") {
       setActiveGenre(queueSelectedGenre);
     }
-    // Reset YouTube tab when entering YouTube section
-    if (sectionId === "youtube") {
-      setActiveYouTubeTab("search");
-    }
   }, [queueSelectedGenre]);
 
   const handleSelectGenre = useCallback((genreId, targetSection) => {
     setActiveGenre(genreId);
-    // Handle YouTube sub-tabs
-    if (targetSection === "youtube") {
-      setActiveYouTubeTab(genreId); // 'search' or 'favorites'
-    }
     // Only trigger queue fetch if the target section is "online"
     if (targetSection === "online") {
       queueSelectGenre(genreId);
@@ -283,30 +343,36 @@ export default function Home() {
     loadTrack(track);
     // Switch to YouTube section to show player
     setActiveSection("youtube");
-    setActiveYouTubeTab("search");
   }, [loadTrack]);
 
   // Play a YouTube favorite
   const handlePlayFavorite = useCallback((track) => {
-    setCurrentYouTubeTrack(track);
-    loadTrack(track);
-    setActiveSection("youtube");
-    setActiveYouTubeTab("favorites");
-  }, [loadTrack]);
+    if (track.provider === "local") {
+      // Local favorites only store the file's path; the file itself comes from the connected library.
+      const file = localAllTracks.find((f) => `local-${f.path}` === track.id);
+      if (!file) {
+        // Library not connected (or file gone): send the user to Local, which offers to reconnect.
+        setActiveSection("local");
+        return;
+      }
+      setCurrentYouTubeTrack(track);
+      startLocalFile(file);
+    } else {
+      setCurrentYouTubeTrack(track);
+      loadTrack(track);
+      // YouTube tracks autoplay on their own; audio tracks only autoplay if the user hadn't paused.
+      if (track.provider !== "youtube") play();
+    }
+    setActiveSection("favorites");
+  }, [loadTrack, play, localAllTracks, startLocalFile]);
 
-  // Play a local music track
-  const handlePlayLocalTrack = useCallback(async (track) => {
-    const url = await track.handle.getFile().then(f => URL.createObjectURL(f));
-    loadTrack({
-      ...track,
-      provider: "local",
-      streamUrl: url,
-      id: `local-${track.path}`,
-      title: track.name.replace(/\.[^.]+$/, ""),
-      artist: "Local Music",
-    });
+  // Play a local music track from the Local section, remembering the list it came from for next/previous
+  const handlePlayLocalTrack = useCallback(async (file, queue) => {
+    localQueueRef.current = queue?.length ? queue : [file];
+    setCurrentLocalTrack(toLocalTrack(file));
     setActiveSection("local");
-  }, [loadTrack]);
+    await startLocalFile(file);
+  }, [startLocalFile]);
 
   // Compute current track based on active section
   const currentTrack = activeSection === "online" ? queueCurrentTrack : null;
@@ -326,12 +392,19 @@ export default function Home() {
     <div className="relative min-h-screen w-full">
       <WallpaperBackground wallpaper={wallpaper} />
       <audio ref={audioRef} preload="metadata" />
+      {/* YouTube plays through a hidden iframe: audio only, no video shown */}
+      <div
+        className="pointer-events-none fixed -left-[9999px] top-0 h-[200px] w-[200px] overflow-hidden opacity-0"
+        aria-hidden="true"
+      >
+        <div id="youtube-player-container" ref={youtubeContainerRef} />
+      </div>
 
       <div className="relative z-10 flex min-h-screen flex-col lg:flex-row">
         <Sidebar
           sections={sections}
           activeSection={activeSection}
-          activeGenre={activeGenre}
+          activeGenre={activeSection === "youtube" ? "search" : activeGenre}
           onSelectSection={handleSelectSection}
           onSelectGenre={handleSelectGenre}
           className="hidden lg:flex"
@@ -342,6 +415,7 @@ export default function Home() {
             <p className="text-base font-semibold tracking-tight text-text-primary">
               Vibe Coding
             </p>
+            <DownloadSettings className="h-10 w-10 justify-center" />
           </header>
 
           {/* Mobile navigation tabs */}
@@ -368,25 +442,47 @@ export default function Home() {
           <MobileGenreSelector
             sections={sections}
             activeSection={activeSection}
-            activeGenre={activeGenre}
+            activeGenre={activeSection === "youtube" ? "search" : activeGenre}
             onSelectSection={handleSelectSection}
             onSelectGenre={handleSelectGenre}
             className="px-4 pt-3 pb-2 sm:px-6 lg:hidden"
           />
 
           {/* YouTube Search Bar + YouTube Player (when playing) */}
-          {(activeSection === "youtube") && (
+          {(activeSection === "youtube" || activeSection === "favorites") && (
             <div className="px-4 py-3 sm:px-6 border-b border-border">
-              <YouTubeSearch onSearch={handleYouTubeSearch} />
-              {/* YouTube Player - always rendered for ref availability, shown when playing */}
-              <div className={`w-full max-w-2xl mt-4 mx-auto ${showYouTubePlayer ? "block" : "hidden"}`}>
-                <div 
-                  id="youtube-player-container"
-                  ref={youtubeContainerRef}
-                  className="aspect-video w-full rounded-xl overflow-hidden bg-black"
-                  aria-label="YouTube Player"
+              {activeSection === "youtube" ? (
+                <YouTubeSearch onSearch={handleYouTubeSearch} />
+              ) : (
+                <YouTubeSearch
+                  key="favorites-search"
+                  onSearch={setFavoritesQuery}
+                  placeholder="Search your favorites..."
+                  ariaLabel="Search favorites"
                 />
-              </div>
+              )}
+              {showYouTubeAudioPlayer && (
+                <div className="flex w-full justify-center">
+                  <MusicPlayer
+                    isLoading={false}
+                    error={null}
+                    isEmpty={false}
+                    track={youtubeAudioTrack}
+                    isPlaying={isPlaying}
+                    currentTime={currentTime}
+                    duration={duration}
+                    onTogglePlay={togglePlay}
+                    onPrevious={handlePrevious}
+                    onNext={handleNext}
+                    volume={volume}
+                    isMuted={isMuted}
+                    onVolumeChange={setVolume}
+                    onToggleMute={toggleMute}
+                    onSeek={seek}
+                    controlsOnMobile
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -414,47 +510,12 @@ export default function Home() {
               </div>
             )}
 
-            {/* YouTube Section - Search & Favorites tabs */}
-            {activeSection === "youtube" && (
+            {/* YouTube search results and the shared Favorites list use the same song cards */}
+            {(activeSection === "youtube" || activeSection === "favorites") && (
               <div className="w-full max-w-2xl">
-                {/* YouTube Sub-tabs */}
-                <div className="px-4 py-2 sm:px-6 border-b border-border">
-                  <nav className="flex gap-1 overflow-x-auto no-scrollbar pb-2" aria-label="YouTube sections">
-                    <button
-                      type="button"
-                      onClick={() => setActiveYouTubeTab("search")}
-                      className={`focus-ring flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-                        activeYouTubeTab === "search"
-                          ? "bg-white/10 text-text-primary"
-                          : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
-                      }`}
-                    >
-                      <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                        <circle cx="11" cy="11" r="8" fill="none" stroke="currentColor" strokeWidth="2" />
-                        <path d="M21 21l-4.35-4.35" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                      </svg>
-                      Search
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveYouTubeTab("favorites")}
-                      className={`focus-ring flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-                        activeYouTubeTab === "favorites"
-                          ? "bg-white/10 text-text-primary"
-                          : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
-                      }`}
-                    >
-                      <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      Favorites
-                    </button>
-                  </nav>
-                </div>
-                
                 {/* YouTube Content */}
                 <div className="glass-panel flex flex-col gap-4 rounded-3xl p-6 sm:p-8 mt-6 mb-6">
-                  {activeYouTubeTab === "search" ? (
+                  {activeSection === "youtube" ? (
                     <>
                       {youtubeIsLoading ? (
                         <div className="flex min-h-[5rem] items-center justify-center text-center px-4">
@@ -490,17 +551,19 @@ export default function Home() {
                   ) : (
                     <>
                       <h2 className="px-2 py-2 text-sm font-medium text-text-secondary">
-                        YouTube Favorites ({favorites.length})
+                        Favorites ({visibleFavorites.length}{visibleFavorites.length !== favorites.length ? ` of ${favorites.length}` : ""})
                       </h2>
-                      {favorites.length === 0 ? (
+                      {visibleFavorites.length === 0 ? (
                         <div className="flex min-h-[5rem] items-center justify-center text-center px-4">
                           <p className="text-sm text-text-secondary">
-                            No favorites yet. Search YouTube and click the heart icon to save tracks.
+                            {favorites.length === 0
+                              ? "No favorites yet. Click the heart icon on any song to save it."
+                              : "No favorites match your search."}
                           </p>
                         </div>
                       ) : (
                         <ul className="flex flex-col gap-1" role="list">
-                          {favorites.map((track) => (
+                          {visibleFavorites.map((track) => (
                             <YouTubeResultCard
                               key={track.id}
                               track={track}
@@ -517,8 +580,35 @@ export default function Home() {
 
             {/* Local Music Section */}
             {activeSection === "local" && (
-              <div className="w-full max-w-2xl">
-                <LocalMusic onPlayTrack={handlePlayLocalTrack} />
+              <div className="flex w-full max-w-4xl flex-col gap-4">
+                {currentLocalTrack && provider === "local" && (
+                  <div className="flex w-full justify-center">
+                    <MusicPlayer
+                      isLoading={false}
+                      error={null}
+                      isEmpty={false}
+                      track={{ ...currentLocalTrack, genre: "Local" }}
+                      isPlaying={isPlaying}
+                      currentTime={currentTime}
+                      duration={duration}
+                      onTogglePlay={togglePlay}
+                      onPrevious={handlePrevious}
+                      onNext={handleNext}
+                      volume={volume}
+                      isMuted={isMuted}
+                      onVolumeChange={setVolume}
+                      onToggleMute={toggleMute}
+                      onSeek={seek}
+                      controlsOnMobile
+                    />
+                  </div>
+                )}
+                <LocalMusic
+                  library={localLibrary}
+                  currentTrackId={provider === "local" ? currentLocalTrack?.id : null}
+                  isPlaying={isPlaying}
+                  onPlayTrack={handlePlayLocalTrack}
+                />
               </div>
             )}
           </main>
@@ -541,6 +631,8 @@ export default function Home() {
                   isMuted={isMuted}
                   onVolumeChange={setVolume}
                   onToggleMute={toggleMute}
+                  leading={<FavoriteButton track={currentTrack} />}
+                  trailing={<DownloadButton track={currentTrack} />}
                 />
               </div>
             </div>
