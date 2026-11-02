@@ -34,7 +34,7 @@ export default function MusicPlayer({
   const controlsDisabled = isLoading || Boolean(error) || isEmpty;
 
   return (
-    <div className="glass-panel flex w-full max-w-2xl flex-col gap-8 rounded-3xl p-8 sm:p-10 my-4 sm:my-6">
+    <div className="glass-panel flex w-full max-w-2xl flex-col gap-6 rounded-3xl p-6 sm:gap-8 sm:p-10 my-2 sm:my-6">
       {isLoading ? (
         <StatusMessage>Loading your vibe...</StatusMessage>
       ) : error ? (

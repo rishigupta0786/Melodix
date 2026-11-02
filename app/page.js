@@ -389,7 +389,7 @@ export default function Home() {
   const { wallpaper } = useWallpaperRotation();
 
   return (
-    <div className="relative min-h-screen w-full">
+    <div className="relative h-dvh w-full overflow-hidden lg:h-auto lg:min-h-screen lg:overflow-visible">
       <WallpaperBackground wallpaper={wallpaper} />
       <audio ref={audioRef} preload="metadata" />
       {/* YouTube plays through a hidden iframe: audio only, no video shown */}
@@ -400,7 +400,7 @@ export default function Home() {
         <div id="youtube-player-container" ref={youtubeContainerRef} />
       </div>
 
-      <div className="relative z-10 flex min-h-screen flex-col lg:flex-row">
+      <div className="relative z-10 flex h-full flex-col lg:h-auto lg:min-h-screen lg:flex-row">
         <Sidebar
           sections={sections}
           activeSection={activeSection}
@@ -410,7 +410,7 @@ export default function Home() {
           className="hidden lg:flex"
         />
 
-        <div className="flex min-h-screen flex-1 flex-col">
+        <div className="flex h-full min-h-0 flex-1 flex-col lg:h-auto lg:min-h-screen">
           <header className="flex items-center justify-between gap-4 px-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 lg:hidden">
             <p className="text-base font-semibold tracking-tight text-text-primary">
               Vibe Coding
@@ -486,10 +486,10 @@ export default function Home() {
             </div>
           )}
 
-          <main className="flex flex-1 flex-col items-center justify-start px-4 py-4 sm:px-6 pb-28 lg:pb-8 overflow-y-auto">
+          <main className="flex min-h-0 flex-1 flex-col items-center justify-start px-4 py-4 sm:px-6 lg:pb-8 overflow-y-auto">
             {/* Online Music Player */}
             {activeSection === "online" && (
-              <div className="max-lg:mt-auto max-lg:mb-8 w-full flex justify-center">
+              <div className="max-lg:my-auto w-full flex justify-center">
                 <MusicPlayer
                   isLoading={isLoading}
                   error={error}
@@ -615,8 +615,8 @@ export default function Home() {
 
           {/* Mobile Fixed Bottom Player Bar - show for online section with track */}
           {activeSection === "online" && currentTrack && (
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-              <div className="glass-panel mx-4 mb-6 mt-2 rounded-3xl p-5 border-t border-white/10">
+            <div className="lg:hidden shrink-0 z-50 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+              <div className="glass-panel mx-4 mb-2 mt-2 rounded-3xl p-4 border-t border-white/10">
                 <PlayerControls
                   isPlaying={isPlaying}
                   onTogglePlay={togglePlay}
@@ -638,7 +638,6 @@ export default function Home() {
             </div>
           )}
 
-          <div className="h-[max(1rem,env(safe-area-inset-bottom))] lg:hidden" />
         </div>
       </div>
     </div>
